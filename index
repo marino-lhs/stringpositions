@@ -1,0 +1,2144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>String Position Fingering Quiz</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vexflow/3.0.9/vexflow-min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0c1220; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+/* ═══════════════════════════════════════════════
+   GLOBAL STYLES
+═══════════════════════════════════════════════ */
+const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0c1220; font-family: 'DM Sans', sans-serif; color: #f1ece2; }
+
+  @keyframes pop {
+    0%   { transform: scale(0.88); opacity: 0; }
+    65%  { transform: scale(1.06); }
+    100% { transform: scale(1);    opacity: 1; }
+  }
+  @keyframes slide {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .pop   { animation: pop   0.28s cubic-bezier(0.34,1.56,0.64,1) both; }
+  .slide { animation: slide 0.3s ease both; }
+
+  .opt-card {
+    background: #162032; border: 1.5px solid #253348;
+    border-radius: 14px; padding: 18px 16px;
+    cursor: pointer; text-align: center;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s;
+    font-family: 'DM Sans', sans-serif; color: #f1ece2; width: 100%;
+  }
+  .opt-card:hover {
+    border-color: #c89b3c; background: #1a2d45; transform: translateY(-2px);
+  }
+  .opt-card.active {
+    border-color: #c89b3c; background: #1a2d45;
+  }
+
+  .finger-btn {
+    background: #fbf7ee;
+    border: 2px solid #8896aa;
+    color: #222;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+  }
+  .finger-btn:hover:not(:disabled) {
+    background: #fde68a;
+    border-color: #ca8a04;
+    transform: translateY(-1px);
+  }
+  .finger-btn:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .finger-btn.correct {
+    background: #22c55e;
+    border-color: #15803d;
+    color: white;
+  }
+  .finger-btn.wrong {
+    background: #ef4444;
+    border-color: #b91c1c;
+    color: white;
+  }
+
+  .primary-btn {
+    background: #c89b3c;
+    color: #0c1220;
+    border: none;
+    padding: 12px 28px;
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .primary-btn:hover { background: #d4a849; }
+  .primary-btn:disabled { background: #5d4a20; color: #999; cursor: not-allowed; }
+
+  .ghost-btn {
+    background: none;
+    border: 1px solid #253348;
+    color: #6b7280;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+  }
+  .ghost-btn:hover { color: #f1ece2; border-color: #c89b3c; }
+`;
+
+/* ═══════════════════════════════════════════════
+   MUSIC THEORY DATA — POSITIONS
+═══════════════════════════════════════════════ */
+// For a given (instrument, position, string), the letter -> finger mapping.
+const POSITIONS = {
+  violin: {
+    2: {
+      G: { B: 1, C: 2, D: 3, E: 4 },
+      D: { F: 1, G: 2, A: 3, B: 4 },
+      A: { C: 1, D: 2, E: 3, F: 4 },
+      E: { G: 1, A: 2, B: 3, C: 4 },
+    },
+    3: {
+      G: { C: 1, D: 2, E: 3, F: 4 },
+      D: { G: 1, A: 2, B: 3, C: 4 },
+      A: { D: 1, E: 2, F: 3, G: 4 },
+      E: { A: 1, B: 2, C: 3, D: 4 },
+    },
+    4: {
+      G: { D: 1, E: 2, F: 3, G: 4 },
+      D: { A: 1, B: 2, C: 3, D: 4 },
+      A: { E: 1, F: 2, G: 3, A: 4 },
+      E: { B: 1, C: 2, D: 3, E: 4 },
+    },
+  },
+  viola: {
+    2: {
+      C: { E: 1, F: 2, G: 3, A: 4 },
+      G: { B: 1, C: 2, D: 3, E: 4 },
+      D: { F: 1, G: 2, A: 3, B: 4 },
+      A: { C: 1, D: 2, E: 3, F: 4 },
+    },
+    3: {
+      C: { F: 1, G: 2, A: 3, B: 4 },
+      G: { C: 1, D: 2, E: 3, F: 4 },
+      D: { G: 1, A: 2, B: 3, C: 4 },
+      A: { D: 1, E: 2, F: 3, G: 4 },
+    },
+    4: {
+      C: { G: 1, A: 2, B: 3, C: 4 },
+      G: { D: 1, E: 2, F: 3, G: 4 },
+      D: { A: 1, B: 2, C: 3, D: 4 },
+      A: { E: 1, F: 2, G: 3, A: 4 },
+    },
+  },
+};
+
+const OPEN_STRINGS = {
+  violin: { G: 55, D: 62, A: 69, E: 76 },
+  viola:  { C: 48, G: 55, D: 62, A: 69 },
+};
+
+const STRING_ORDER = {
+  violin: ['G', 'D', 'A', 'E'],
+  viola:  ['C', 'G', 'D', 'A'],
+};
+
+const LETTER_SEMITONE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+const INSTR = {
+  violin: { name: 'Violin', clef: 'treble', desc: 'G · D · A · E  ·  Treble clef' },
+  viola:  { name: 'Viola',  clef: 'alto',   desc: 'C · G · D · A  ·  Alto clef' },
+};
+
+/* ═══════════════════════════════════════════════
+   MUSIC THEORY HELPERS
+═══════════════════════════════════════════════ */
+function noteToMidi(letter, accidental, octave) {
+  return 12 * (octave + 1) + LETTER_SEMITONE[letter] + accidental;
+}
+
+function findNextLetterAbove(openMidi, letter) {
+  for (let m = openMidi + 1; m < openMidi + 15; m++) {
+    if (m % 12 === LETTER_SEMITONE[letter]) return m;
+  }
+  return null;
+}
+
+// For (instrument, position, letter, octave), figure out which string the note lives on.
+function getStringForNote(instrument, position, letter, octave) {
+  const positionMap = POSITIONS[instrument][position];
+  const strings = STRING_ORDER[instrument];
+  for (const str of strings) {
+    const letterMap = positionMap[str];
+    if (!letterMap || !(letter in letterMap)) continue;
+    const finger1Letter = Object.keys(letterMap).find(k => letterMap[k] === 1);
+    const finger4Letter = Object.keys(letterMap).find(k => letterMap[k] === 4);
+    const openMidi = OPEN_STRINGS[instrument][str];
+    const finger1Midi = findNextLetterAbove(openMidi, finger1Letter);
+    const finger4Midi = findNextLetterAbove(openMidi, finger4Letter);
+    const naturalMidi = noteToMidi(letter, 0, octave);
+    if (naturalMidi >= finger1Midi && naturalMidi <= finger4Midi) {
+      return str;
+    }
+  }
+  return null;
+}
+
+function getFingerForNote(instrument, position, letter, octave) {
+  const str = getStringForNote(instrument, position, letter, octave);
+  if (!str) return null;
+  return { string: str, finger: POSITIONS[instrument][position][str][letter] };
+}
+
+// All valid notes for a given instrument+position
+function getValidNotesForPosition(instrument, position) {
+  const positionMap = POSITIONS[instrument][position];
+  const strings = STRING_ORDER[instrument];
+  const result = [];
+  for (const str of strings) {
+    const letterMap = positionMap[str];
+    const finger1Letter = Object.keys(letterMap).find(k => letterMap[k] === 1);
+    const finger4Letter = Object.keys(letterMap).find(k => letterMap[k] === 4);
+    const openMidi = OPEN_STRINGS[instrument][str];
+    const finger1Midi = findNextLetterAbove(openMidi, finger1Letter);
+    const finger4Midi = findNextLetterAbove(openMidi, finger4Letter);
+    for (const letter of Object.keys(letterMap)) {
+      for (let octave = 2; octave <= 7; octave++) {
+        const naturalMidi = noteToMidi(letter, 0, octave);
+        if (naturalMidi >= finger1Midi && naturalMidi <= finger4Midi) {
+          result.push({ letter, octave, string: str, finger: letterMap[letter], naturalMidi });
+        }
+      }
+    }
+  }
+  return result.sort((a, b) => a.naturalMidi - b.naturalMidi);
+}
+
+function ordinal(n) {
+  if (n === 2) return '2nd';
+  if (n === 3) return '3rd';
+  return n + 'th';
+}
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/* ═══════════════════════════════════════════════
+   VEXFLOW HELPERS
+═══════════════════════════════════════════════ */
+// Convert (letter, accidental, octave) to VexFlow key string like "c#/4"
+function noteToVexKey(letter, accidental, octave) {
+  const acc = accidental === 1 ? '#' : accidental === -1 ? 'b' : '';
+  return `${letter.toLowerCase()}${acc}/${octave}`;
+}
+
+// Compute the "staff line position" for stem direction logic.
+// For each clef, the middle line corresponds to a specific note.
+//   Treble: middle line = B4
+//   Alto:   middle line = C4
+// Returns a number where 0 = middle line, positive = above, negative = below.
+function staffPosition(clef, letter, octave) {
+  const LETTERS = ['C','D','E','F','G','A','B'];
+  const stepIdx = LETTERS.indexOf(letter);
+  const totalSteps = octave * 7 + stepIdx;
+  // middle line = B4 for treble (octave 4, B = idx 6) -> 4*7+6=34
+  //               C4 for alto (octave 4, C = idx 0) -> 4*7+0=28
+  const middleSteps = clef === 'treble' ? 34 : 28;
+  return totalSteps - middleSteps;
+}
+
+// Apply user's stem direction rules:
+//   - Above middle line: stem down
+//   - Below middle line: stem up
+//   - On middle line: default up unless majority are stem-down
+function computeStemDirections(notes, clef) {
+  const VF = Vex.Flow;
+  // First pass: assign a tentative direction per note
+  const tentative = notes.map(n => {
+    const p = staffPosition(clef, n.letter, n.octave);
+    if (p > 0) return VF.Stem.DOWN;
+    if (p < 0) return VF.Stem.UP;
+    return null; // on middle line, decide later
+  });
+  // Count above vs below decisions to decide middle-line notes (majority rule)
+  const downCount = tentative.filter(d => d === VF.Stem.DOWN).length;
+  const upCount = tentative.filter(d => d === VF.Stem.UP).length;
+  const middleDir = downCount > upCount ? VF.Stem.DOWN : VF.Stem.UP;
+  return tentative.map(d => d === null ? middleDir : d);
+}
+
+// Compute beam group ranges within a measure: each group is [startIdx, endIdx]
+// (inclusive) where notes are eighths within the same beat. Singleton eighths
+// (an eighth by itself in a beat) are NOT included — they get flags.
+function computeBeamGroups(notes) {
+  const groups = [];
+  let runningBeat = 0;
+  let curStart = -1;
+  let curStartBeat = 0;
+  for (let i = 0; i < notes.length; i++) {
+    const isEighth = notes[i].duration === 'eighth';
+    if (isEighth) {
+      if (curStart === -1) {
+        curStart = i;
+        curStartBeat = runningBeat;
+      } else if (Math.floor(runningBeat) !== Math.floor(curStartBeat)) {
+        // Eighth in different beat — close previous group, start new
+        if (i - 1 >= curStart + 1) groups.push([curStart, i - 1]);
+        // (a singleton eighth becomes its own potential start; we'll re-evaluate)
+        curStart = i;
+        curStartBeat = runningBeat;
+      }
+    } else {
+      if (curStart !== -1 && i - 1 >= curStart + 1) {
+        groups.push([curStart, i - 1]);
+      }
+      curStart = -1;
+    }
+    runningBeat += DURATION_BEATS[notes[i].duration];
+  }
+  if (curStart !== -1 && notes.length - 1 >= curStart + 1) {
+    groups.push([curStart, notes.length - 1]);
+  }
+  return groups;
+}
+
+// Compute stem directions, but FORCE all notes in a beam group to share direction.
+// For a beam group, pick the direction based on the note furthest from the middle line
+// (standard engraving convention). This avoids VexFlow's mixed-stem fallback to flags.
+function computeStemDirectionsForMeasure(notes, clef) {
+  const VF = Vex.Flow;
+  const beamGroups = computeBeamGroups(notes);
+
+  // Start with per-note tentative directions
+  const dirs = notes.map(n => {
+    const p = staffPosition(clef, n.letter, n.octave);
+    if (p > 0) return VF.Stem.DOWN;
+    if (p < 0) return VF.Stem.UP;
+    return null;
+  });
+
+  // Resolve middle-line notes first using majority rule
+  const downCount = dirs.filter(d => d === VF.Stem.DOWN).length;
+  const upCount = dirs.filter(d => d === VF.Stem.UP).length;
+  const middleDir = downCount > upCount ? VF.Stem.DOWN : VF.Stem.UP;
+  for (let i = 0; i < dirs.length; i++) {
+    if (dirs[i] === null) dirs[i] = middleDir;
+  }
+
+  // For each beam group, override to a single direction.
+  // Pick direction based on the note furthest from middle line:
+  //   if max-distance note is above middle -> all stems DOWN
+  //   if max-distance note is below middle -> all stems UP
+  //   tie -> stems UP (engraving convention favors up when in doubt)
+  for (const [start, end] of beamGroups) {
+    let maxDist = 0;
+    let maxAbove = false; // tracks whether the extreme is above middle
+    for (let i = start; i <= end; i++) {
+      const p = staffPosition(clef, notes[i].letter, notes[i].octave);
+      const dist = Math.abs(p);
+      if (dist > maxDist) {
+        maxDist = dist;
+        maxAbove = p > 0;
+      }
+      // On tie, do NOT update — first-set direction wins, but we want UP on tie,
+      // so we explicitly only flip to "above" when strictly greater.
+    }
+    const groupDir = maxAbove ? VF.Stem.DOWN : VF.Stem.UP;
+    for (let i = start; i <= end; i++) dirs[i] = groupDir;
+  }
+
+  return { dirs, beamGroups };
+}
+
+// Convert duration token to VexFlow duration.
+// q=quarter, 8=eighth, qd=dotted quarter, h=half
+const DURATION_VEX = {
+  'quarter': 'q',
+  'eighth': '8',
+  'dotted-quarter': 'q',  // dot added via addDotToAll() below
+  'half': 'h',
+};
+const DURATION_BEATS = {
+  'quarter': 1,
+  'eighth': 0.5,
+  'dotted-quarter': 1.5,
+  'half': 2,
+};
+
+/* ═══════════════════════════════════════════════
+   STAFF VIEW — SINGLE NOTE (Mode 1)
+═══════════════════════════════════════════════ */
+function SingleNoteStaff({ letter, octave, accidental, clef }) {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!containerRef.current || typeof Vex === 'undefined' || !Vex.Flow) return;
+    const VF = Vex.Flow;
+    const el = containerRef.current;
+    el.innerHTML = '';
+
+    try {
+      // Outer container is wider; the staff inside is smaller and centered.
+      const W = 240, H = 180;
+      const STAVE_W = 130; // narrower staff for tighter framing
+      const STAVE_X = (W - STAVE_W) / 2;
+
+      const renderer = new VF.Renderer(el, VF.Renderer.Backends.SVG);
+      renderer.resize(W, H);
+      const ctx = renderer.getContext();
+
+      // Parchment background
+      const svgEl = el.querySelector('svg');
+      if (svgEl) {
+        const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        bg.setAttribute('x', '0');
+        bg.setAttribute('y', '0');
+        bg.setAttribute('width', String(W));
+        bg.setAttribute('height', String(H));
+        bg.setAttribute('fill', '#FBF7EE');
+        bg.setAttribute('rx', '10');
+        svgEl.insertBefore(bg, svgEl.firstChild);
+      }
+
+      const stave = new VF.Stave(STAVE_X, 60, STAVE_W);
+      stave.addClef(clef);
+      stave.setContext(ctx).draw();
+
+      // Apply stem direction rule: above middle line = down, below = up, on = up by default
+      const stemDir = computeStemDirections(
+        [{ letter, octave }],
+        clef
+      )[0];
+
+      const key = noteToVexKey(letter, accidental, octave);
+      const note = new VF.StaveNote({
+        clef,
+        keys: [key],
+        duration: 'q',
+        stem_direction: stemDir,
+      });
+      if (accidental === 1) note.addAccidental(0, new VF.Accidental('#'));
+      else if (accidental === -1) note.addAccidental(0, new VF.Accidental('b'));
+
+      const voice = new VF.Voice({ num_beats: 1, beat_value: 4 });
+      voice.setStrict(false);
+      voice.addTickables([note]);
+
+      // Format with smaller width so the note centers within the small stave
+      new VF.Formatter().joinVoices([voice]).format([voice], STAVE_W - 50);
+      voice.draw(ctx, stave);
+    } catch (err) {
+      console.error('VexFlow single-note render error:', err);
+    }
+  }, [letter, octave, accidental, clef]);
+
+  return (
+    <div ref={containerRef} style={{
+      width: 240, height: 180, borderRadius: 10, overflow: 'hidden',
+      background: '#FBF7EE', margin: '0 auto',
+    }} />
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   STAFF VIEW — PHRASE (Mode 2)
+   Renders two measures using two adjacent VF.Stave objects.
+═══════════════════════════════════════════════ */
+function PhraseStaff({ phrase, clef, results }) {
+  const containerRef = useRef(null);
+
+  // Split phrase into two measures (each 4 beats)
+  const splitPhraseIntoMeasures = (notes) => {
+    const m1 = [], m2 = [];
+    let beat = 0;
+    for (const n of notes) {
+      if (beat < 4) m1.push(n);
+      else m2.push(n);
+      beat += DURATION_BEATS[n.duration];
+    }
+    return [m1, m2];
+  };
+
+  const [m1, m2] = splitPhraseIntoMeasures(phrase);
+
+  // Width sizing
+  const m1Width = 100 + m1.length * 50; // clef + time sig + notes
+  const m2Width = 30 + m2.length * 50;
+  const W = m1Width + m2Width + 30;
+  const H = 180;
+
+  useEffect(() => {
+    if (!containerRef.current || typeof Vex === 'undefined' || !Vex.Flow) return;
+    const VF = Vex.Flow;
+    const el = containerRef.current;
+    el.innerHTML = '';
+
+    try {
+      const renderer = new VF.Renderer(el, VF.Renderer.Backends.SVG);
+      renderer.resize(W, H);
+      const ctx = renderer.getContext();
+
+      // Parchment background
+      const svgEl = el.querySelector('svg');
+      if (svgEl) {
+        const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        bg.setAttribute('x', '0');
+        bg.setAttribute('y', '0');
+        bg.setAttribute('width', String(W));
+        bg.setAttribute('height', String(H));
+        bg.setAttribute('fill', '#FBF7EE');
+        bg.setAttribute('rx', '10');
+        svgEl.insertBefore(bg, svgEl.firstChild);
+      }
+
+      // Helper to make VF notes for a given measure slice
+      const makeVfNotes = (notesSlice, stemSlice, indexOffset) => {
+        return notesSlice.map((n, idx) => {
+          const key = noteToVexKey(n.letter, n.accidental, n.octave);
+          const note = new VF.StaveNote({
+            clef,
+            keys: [key],
+            duration: DURATION_VEX[n.duration],
+            stem_direction: stemSlice[idx],
+          });
+          if (n.duration === 'dotted-quarter') {
+            note.addDotToAll();
+          }
+          if (n.accidental === 1) note.addAccidental(0, new VF.Accidental('#'));
+          else if (n.accidental === -1) note.addAccidental(0, new VF.Accidental('b'));
+          if (results) {
+            const color = results[indexOffset + idx] ? '#15803d' : '#b91c1c';
+            note.setStyle({ fillStyle: color, strokeStyle: color });
+          }
+          return note;
+        });
+      };
+
+      // Compute stem directions and beam groups PER MEASURE
+      // (this ensures middle-line majority rule applies per measure, and beam
+      // groups force uniform stem direction within them)
+      const m1Result = computeStemDirectionsForMeasure(m1, clef);
+      const m2Result = computeStemDirectionsForMeasure(m2, clef);
+
+      const stave1 = new VF.Stave(10, 50, m1Width);
+      stave1.addClef(clef);
+      stave1.addTimeSignature('4/4');
+      stave1.setContext(ctx).draw();
+
+      const stave2 = new VF.Stave(10 + m1Width, 50, m2Width + 10);
+      stave2.setContext(ctx).draw();
+
+      const vfM1 = makeVfNotes(m1, m1Result.dirs, 0);
+      const vfM2 = makeVfNotes(m2, m2Result.dirs, m1.length);
+
+      const beats1 = m1.reduce((s, n) => s + DURATION_BEATS[n.duration], 0);
+      const beats2 = m2.reduce((s, n) => s + DURATION_BEATS[n.duration], 0);
+
+      const voice1 = new VF.Voice({ num_beats: Math.round(beats1), beat_value: 4 });
+      voice1.setStrict(false);
+      voice1.addTickables(vfM1);
+
+      const voice2 = new VF.Voice({ num_beats: Math.round(beats2), beat_value: 4 });
+      voice2.setStrict(false);
+      voice2.addTickables(vfM2);
+
+      // Format each voice independently within its stave
+      new VF.Formatter().joinVoices([voice1]).format([voice1], m1Width - 100);
+      new VF.Formatter().joinVoices([voice2]).format([voice2], m2Width - 30);
+
+      // Build beams BEFORE drawing the voices — Beam constructor marks each
+      // note as beamed, which suppresses the individual flag glyphs.
+      const beams1 = m1Result.beamGroups.map(([s, e]) => new VF.Beam(vfM1.slice(s, e + 1)));
+      const beams2 = m2Result.beamGroups.map(([s, e]) => new VF.Beam(vfM2.slice(s, e + 1)));
+
+      voice1.draw(ctx, stave1);
+      voice2.draw(ctx, stave2);
+
+      beams1.forEach(b => b.setContext(ctx).draw());
+      beams2.forEach(b => b.setContext(ctx).draw());
+    } catch (err) {
+      console.error('VexFlow phrase render error:', err);
+    }
+  }, [phrase, clef, results]);
+
+  return (
+    <div ref={containerRef} style={{
+      width: W, height: H, borderRadius: 10, overflow: 'hidden',
+      background: '#FBF7EE', margin: '0 auto',
+    }} />
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   FINGER NUMBER ROW
+═══════════════════════════════════════════════ */
+function FingerRow({ onClick, selected, correct, showResult, disabled }) {
+  // A row of 4 circular buttons numbered 1-4
+  const fingers = [1, 2, 3, 4];
+  return (
+    <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 8 }}>
+      {fingers.map(f => {
+        let className = 'finger-btn';
+        if (showResult) {
+          if (f === correct) className += ' correct';
+          else if (f === selected && f !== correct) className += ' wrong';
+        } else if (selected === f) {
+          className += ' active';
+        }
+        return (
+          <button
+            key={f}
+            className={className}
+            disabled={disabled}
+            onClick={() => onClick(f)}
+            style={{
+              width: 56, height: 56, borderRadius: '50%',
+              fontSize: 22, lineHeight: 1,
+            }}
+          >
+            {f}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   PRE-COMPOSED PHRASES
+   Organized by instrument -> position -> level (1-4)
+   Each phrase: 8 beats (2 bars of 4/4)
+   Each note: { letter, accidental, octave, duration }
+═══════════════════════════════════════════════ */
+const PHRASES = {
+  violin: {
+    2: {
+      1: [
+        // Stepwise, single string focus
+        [
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+      ],
+      2: [
+        // Mostly stepwise with occasional 3rds; two strings
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'dotted-quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+      ],
+      3: [
+        // Steps + leaps up to 4th/5th; three strings
+        [
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+        ],
+      ],
+      4: [
+        // Wider leaps, arpeggios, all four strings
+        [
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'G', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'half' },
+        ],
+      ],
+    },
+    3: {
+      1: [
+        [
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'dotted-quarter' },
+          { letter: 'G', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+      ],
+      2: [
+        [
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'half' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'half' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'quarter' },
+        ],
+      ],
+      3: [
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'half' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'half' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+        ],
+      ],
+      4: [
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'half' },
+        ],
+      ],
+    },
+    4: {
+      1: [
+        [
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'dotted-quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'B', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'E', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'half' },
+        ],
+      ],
+      2: [
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+        ],
+        [
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+      ],
+      3: [
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'E', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'half' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 6, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 6, duration: 'half' },
+          { letter: 'C', accidental: 0, octave: 6, duration: 'quarter' },
+        ],
+      ],
+      4: [
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'E', accidental: 0, octave: 6, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 6, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'half' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 5, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 6, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'half' },
+        ],
+      ],
+    },
+  },
+  viola: {
+    2: {
+      1: [
+        [
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'half' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'E', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 3, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 3, duration: 'half' },
+        ],
+      ],
+      2: [
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'dotted-quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'half' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 3, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 3, duration: 'half' },
+        ],
+      ],
+      3: [
+        [
+          { letter: 'E', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+      ],
+      4: [
+        [
+          { letter: 'E', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+      ],
+    },
+    3: {
+      1: [
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'dotted-quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+        ],
+      ],
+      2: [
+        [
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+      ],
+      3: [
+        [
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+      ],
+      4: [
+        [
+          { letter: 'F', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'B', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 3, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 5, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+        ],
+      ],
+    },
+    4: {
+      1: [
+        [
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'dotted-quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'half' },
+        ],
+      ],
+      2: [
+        [
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+        [
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+      ],
+      3: [
+        [
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+        [
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+      ],
+      4: [
+        [
+          { letter: 'G', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 3, duration: 'eighth' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'A', accidental: 0, octave: 3, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'half' },
+        ],
+        [
+          { letter: 'F', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'A', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'D', accidental: 0, octave: 4, duration: 'eighth' },
+          { letter: 'B', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'E', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'C', accidental: 0, octave: 4, duration: 'quarter' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'half' },
+          { letter: 'G', accidental: 0, octave: 4, duration: 'quarter' },
+        ],
+      ],
+    },
+  },
+};
+
+const LEVEL_NAMES = {
+  1: 'Stepwise',
+  2: 'Small leaps',
+  3: 'Mixed intervals',
+  4: 'Disjunct',
+};
+
+/* ═══════════════════════════════════════════════
+   QUESTION GENERATION (MODE 1)
+═══════════════════════════════════════════════ */
+function generateSingleNoteQuestion(instrument, position) {
+  const validNotes = getValidNotesForPosition(instrument, position);
+  const note = pickRandom(validNotes);
+  return {
+    letter: note.letter,
+    accidental: 0,
+    octave: note.octave,
+    correctString: note.string,
+    correctFinger: note.finger,
+    position,
+  };
+}
+
+/* ═══════════════════════════════════════════════
+   SCREEN: HOME / SETUP
+═══════════════════════════════════════════════ */
+function HomeScreen({
+  instrument, setInstrument,
+  positionMode, setPositionMode,
+  onStartMode1, onStartMode2,
+}) {
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', padding: '32px 24px', background: '#0c1220',
+    }}>
+      <style>{CSS}</style>
+      <div style={{ textAlign: 'center', marginBottom: 36, maxWidth: 700 }}>
+        <div style={{
+          fontFamily: "'Times New Roman',serif", fontSize: 44,
+          color: '#c89b3c', marginBottom: 12, letterSpacing: 4,
+        }}>𝄞 𝄡</div>
+        <h1 style={{
+          fontFamily: "'Playfair Display',serif",
+          fontSize: 'clamp(28px,5vw,44px)', fontWeight: 700,
+          color: '#f1ece2', marginBottom: 8,
+        }}>String Position Fingerings</h1>
+        <p style={{ color: '#6b7280', fontSize: 15 }}>
+          Practice 2nd, 3rd, and 4th position fingerings on violin and viola
+        </p>
+      </div>
+
+      <div style={{ width: '100%', maxWidth: 620 }}>
+        <div style={{ marginBottom: 24 }}>
+          <div style={{
+            color: '#c89b3c', fontSize: 12, letterSpacing: 2,
+            textTransform: 'uppercase', marginBottom: 10,
+          }}>Instrument</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+            {Object.entries(INSTR).map(([k, inst]) => (
+              <button
+                key={k}
+                className={`opt-card ${instrument === k ? 'active' : ''}`}
+                onClick={() => setInstrument(k)}
+              >
+                <div style={{ fontSize: 30, color: '#c89b3c', marginBottom: 6, fontFamily: "'Times New Roman',serif" }}>
+                  {inst.clef === 'treble' ? '𝄞' : '𝄡'}
+                </div>
+                <div style={{
+                  fontFamily: "'Playfair Display',serif",
+                  fontSize: 18, fontWeight: 700, marginBottom: 4,
+                }}>{inst.name}</div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>{inst.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 28 }}>
+          <div style={{
+            color: '#c89b3c', fontSize: 12, letterSpacing: 2,
+            textTransform: 'uppercase', marginBottom: 10,
+          }}>Position</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+            {[2, 3, 4, 'all'].map(p => (
+              <button
+                key={p}
+                className={`opt-card ${positionMode === p ? 'active' : ''}`}
+                onClick={() => setPositionMode(p)}
+                style={{ padding: '14px 8px' }}
+              >
+                <div style={{
+                  fontFamily: "'Playfair Display',serif",
+                  fontSize: 17, fontWeight: 700,
+                }}>{p === 'all' ? 'All' : ordinal(p)}</div>
+                <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                  {p === 'all' ? '2nd, 3rd & 4th' : 'position'}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{
+          color: '#c89b3c', fontSize: 12, letterSpacing: 2,
+          textTransform: 'uppercase', marginBottom: 10,
+        }}>Mode</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+          <button className="opt-card" onClick={onStartMode1}>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>♩</div>
+            <div style={{
+              fontFamily: "'Playfair Display',serif",
+              fontSize: 18, fontWeight: 700, marginBottom: 4,
+            }}>Single Note</div>
+            <div style={{ fontSize: 12, color: '#6b7280' }}>
+              See a note · click the finger
+            </div>
+          </button>
+          <button className="opt-card" onClick={onStartMode2}>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>♪♪♪</div>
+            <div style={{
+              fontFamily: "'Playfair Display',serif",
+              fontSize: 18, fontWeight: 700, marginBottom: 4,
+            }}>Phrase</div>
+            <div style={{ fontSize: 12, color: '#6b7280' }}>
+              See a 2-bar phrase · finger every note
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   SCREEN: MODE 1 — SINGLE NOTE
+═══════════════════════════════════════════════ */
+function Mode1Screen({ instrument, positionMode, onBack }) {
+  const clef = INSTR[instrument].clef;
+
+  // Determine which position to use for each question
+  const pickPosition = useCallback(() => {
+    if (positionMode === 'all') return pickRandom([2, 3, 4]);
+    return positionMode;
+  }, [positionMode]);
+
+  const [question, setQuestion] = useState(() =>
+    generateSingleNoteQuestion(instrument, pickPosition())
+  );
+  const [selected, setSelected] = useState(null);
+  const [showResult, setShowResult] = useState(false);
+  const [score, setScore] = useState({ correct: 0, total: 0 });
+
+  const onFinger = (f) => {
+    if (showResult) return;
+    setSelected(f);
+    setShowResult(true);
+    setScore(s => ({
+      correct: s.correct + (f === question.correctFinger ? 1 : 0),
+      total: s.total + 1,
+    }));
+  };
+
+  const next = () => {
+    setQuestion(generateSingleNoteQuestion(instrument, pickPosition()));
+    setSelected(null);
+    setShowResult(false);
+  };
+
+  const isCorrect = selected === question.correctFinger;
+
+  return (
+    <div style={{
+      minHeight: '100vh', padding: '24px 20px', background: '#0c1220', position: 'relative',
+    }}>
+      <style>{CSS}</style>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, maxWidth: 700, margin: '0 auto 20px' }}>
+        <button className="ghost-btn" onClick={onBack}>← Home</button>
+        <div style={{ color: '#6b7280', fontSize: 14 }}>
+          Score: <span style={{ color: '#f1ece2', fontWeight: 600 }}>{score.correct} / {score.total}</span>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 600, margin: '0 auto', textAlign: 'center' }}>
+        <div style={{
+          color: '#c89b3c', fontSize: 12, letterSpacing: 3,
+          textTransform: 'uppercase', marginBottom: 6,
+        }}>{INSTR[instrument].name}</div>
+        <div style={{
+          fontFamily: "'Playfair Display',serif",
+          fontSize: 28, fontWeight: 700, color: '#f1ece2', marginBottom: 24,
+        }}>{ordinal(question.position)} Position</div>
+
+        <SingleNoteStaff
+          letter={question.letter}
+          accidental={question.accidental}
+          octave={question.octave}
+          clef={clef}
+        />
+
+        <div style={{ color: '#6b7280', fontSize: 13, marginTop: 18, marginBottom: 4 }}>
+          Which finger?
+        </div>
+
+        <FingerRow
+          onClick={onFinger}
+          selected={selected}
+          correct={question.correctFinger}
+          showResult={showResult}
+          disabled={showResult}
+        />
+
+        {showResult && (
+          <div className="slide" style={{
+            marginTop: 24, padding: 16, borderRadius: 10,
+            background: isCorrect ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+            border: `1px solid ${isCorrect ? '#22c55e' : '#ef4444'}`,
+            color: '#f1ece2', maxWidth: 460, margin: '24px auto 0',
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: isCorrect ? 0 : 6 }}>
+              {isCorrect ? 'Correct!' : 'Not quite.'}
+            </div>
+            {!isCorrect && (
+              <div style={{ fontSize: 14, color: '#cbd5e1', lineHeight: 1.5 }}>
+                {question.letter}{question.octave} in {ordinal(question.position)} position is
+                on the <strong style={{ color: '#c89b3c' }}>{question.correctString} string</strong>,
+                played with finger <strong style={{ color: '#c89b3c' }}>{question.correctFinger}</strong>.
+              </div>
+            )}
+            <button className="primary-btn" onClick={next} style={{ marginTop: 14 }}>
+              Next note →
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   SCREEN: MODE 2 — PHRASE
+═══════════════════════════════════════════════ */
+function Mode2Screen({ instrument, positionMode, onBack }) {
+  const clef = INSTR[instrument].clef;
+  const [level, setLevel] = useState(1);
+
+  // Pick the position for each phrase. For "all", randomize per phrase.
+  const pickPosition = useCallback(() => {
+    if (positionMode === 'all') return pickRandom([2, 3, 4]);
+    return positionMode;
+  }, [positionMode]);
+
+  // Pick a random phrase from the chosen position+level
+  const generatePhrase = useCallback(() => {
+    const position = pickPosition();
+    const phrasesAtLevel = PHRASES[instrument][position][level];
+    const phrase = pickRandom(phrasesAtLevel);
+    return { phrase, position };
+  }, [instrument, level, pickPosition]);
+
+  const [current, setCurrent] = useState(() => generatePhrase());
+  const [fingerInputs, setFingerInputs] = useState(() => new Array(current.phrase.length).fill(null));
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [results, setResults] = useState(null);
+  const [score, setScore] = useState({ correct: 0, total: 0 });
+
+  // When level changes, generate a new phrase
+  useEffect(() => {
+    const gen = generatePhrase();
+    setCurrent(gen);
+    setFingerInputs(new Array(gen.phrase.length).fill(null));
+    setActiveIndex(0);
+    setResults(null);
+  }, [level, generatePhrase]);
+
+  // Keyboard input
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (results) return;
+      if (['1','2','3','4'].includes(e.key)) {
+        e.preventDefault();
+        enterFinger(parseInt(e.key));
+      } else if (e.key === 'Backspace' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setActiveIndex(i => Math.max(0, i - 1));
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setActiveIndex(i => Math.min(current.phrase.length - 1, i + 1));
+      } else if (e.key === 'Enter' && fingerInputs.every(f => f !== null) && !results) {
+        e.preventDefault();
+        handleSubmit();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  });
+
+  const enterFinger = (f) => {
+    if (results) return;
+    setFingerInputs(prev => {
+      const next = [...prev];
+      next[activeIndex] = f;
+      return next;
+    });
+    setActiveIndex(i => Math.min(current.phrase.length - 1, i + 1));
+  };
+
+  const handleSubmit = () => {
+    const newResults = current.phrase.map((n, i) => {
+      const r = getFingerForNote(instrument, current.position, n.letter, n.octave);
+      return r && fingerInputs[i] === r.finger;
+    });
+    setResults(newResults);
+    setScore(s => ({
+      correct: s.correct + newResults.filter(r => r).length,
+      total: s.total + current.phrase.length,
+    }));
+  };
+
+  const handleNextPhrase = () => {
+    const gen = generatePhrase();
+    setCurrent(gen);
+    setFingerInputs(new Array(gen.phrase.length).fill(null));
+    setActiveIndex(0);
+    setResults(null);
+  };
+
+  const allFilled = fingerInputs.every(f => f !== null);
+
+  return (
+    <div style={{
+      minHeight: '100vh', padding: '24px 20px', background: '#0c1220', position: 'relative',
+    }}>
+      <style>{CSS}</style>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, maxWidth: 900, margin: '0 auto 20px' }}>
+        <button className="ghost-btn" onClick={onBack}>← Home</button>
+        <div style={{ color: '#6b7280', fontSize: 14 }}>
+          Score: <span style={{ color: '#f1ece2', fontWeight: 600 }}>{score.correct} / {score.total}</span>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
+        <div style={{
+          color: '#c89b3c', fontSize: 12, letterSpacing: 3,
+          textTransform: 'uppercase', marginBottom: 6,
+        }}>{INSTR[instrument].name}</div>
+        <div style={{
+          fontFamily: "'Playfair Display',serif",
+          fontSize: 26, fontWeight: 700, color: '#f1ece2', marginBottom: 14,
+        }}>{ordinal(current.position)} Position</div>
+
+        {/* Level selector */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+          {[1, 2, 3, 4].map(lv => (
+            <button
+              key={lv}
+              onClick={() => setLevel(lv)}
+              style={{
+                padding: '6px 14px', borderRadius: 6,
+                background: level === lv ? '#c89b3c' : 'transparent',
+                color: level === lv ? '#0c1220' : '#6b7280',
+                border: `1px solid ${level === lv ? '#c89b3c' : '#253348'}`,
+                fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Level {lv}: {LEVEL_NAMES[lv]}
+            </button>
+          ))}
+        </div>
+
+        {/* Staff */}
+        <div style={{ overflowX: 'auto', marginBottom: 20 }}>
+          <PhraseStaff
+            phrase={current.phrase}
+            clef={clef}
+            results={results}
+          />
+        </div>
+
+        {/* Finger entry boxes (showing what the user has entered) */}
+        <div style={{
+          display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap',
+          marginBottom: 14,
+        }}>
+          {current.phrase.map((n, i) => {
+            const isActive = !results && activeIndex === i;
+            const r = results?.[i];
+            return (
+              <button
+                key={i}
+                onClick={() => !results && setActiveIndex(i)}
+                disabled={!!results}
+                style={{
+                  width: 36, height: 36, borderRadius: 6,
+                  background: r === true ? 'rgba(34,197,94,0.25)' : r === false ? 'rgba(239,68,68,0.25)' : isActive ? '#fde68a' : '#fbf7ee',
+                  border: isActive ? '2px solid #c89b3c' : '1px solid #8896aa',
+                  color: '#222', fontWeight: 700, fontSize: 16,
+                  cursor: results ? 'default' : 'pointer',
+                  fontFamily: "'DM Sans',sans-serif",
+                }}
+              >
+                {fingerInputs[i] !== null ? fingerInputs[i] : ''}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Number row buttons */}
+        <FingerRow
+          onClick={enterFinger}
+          selected={null}
+          correct={null}
+          showResult={false}
+          disabled={!!results}
+        />
+
+        <div style={{ color: '#6b7280', fontSize: 12, marginTop: 12 }}>
+          Click numbers to fill, or use keys 1-4 · Backspace/← to go back · Enter to submit
+        </div>
+
+        {/* Submit / Next */}
+        <div style={{ marginTop: 18 }}>
+          {!results && (
+            <button
+              className="primary-btn"
+              onClick={handleSubmit}
+              disabled={!allFilled}
+            >Submit</button>
+          )}
+          {results && (
+            <div className="slide" style={{
+              padding: 16, borderRadius: 10,
+              background: '#162032', border: '1px solid #253348',
+              color: '#f1ece2', maxWidth: 600, margin: '0 auto',
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 16 }}>
+                {results.filter(r => r).length} of {current.phrase.length} correct
+              </div>
+              {results.some(r => !r) && (
+                <div style={{ fontSize: 13, color: '#cbd5e1', marginBottom: 12, lineHeight: 1.7 }}>
+                  Correct fingerings:&nbsp;
+                  {current.phrase.map((n, i) => {
+                    const r = getFingerForNote(instrument, current.position, n.letter, n.octave);
+                    return (
+                      <span key={i} style={{
+                        marginRight: 10,
+                        color: results[i] ? '#22c55e' : '#ef4444',
+                        fontFamily: 'monospace',
+                      }}>
+                        {n.letter}{n.octave}={r?.finger}
+                        <span style={{ color: '#6b7280', fontSize: 11 }}>({r?.string})</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              <button className="primary-btn" onClick={handleNextPhrase}>Next phrase →</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   APP ROOT
+═══════════════════════════════════════════════ */
+function App() {
+  const [screen, setScreen] = useState('home');
+  const [instrument, setInstrument] = useState('violin');
+  const [positionMode, setPositionMode] = useState(3);
+
+  if (screen === 'mode1') {
+    return <Mode1Screen instrument={instrument} positionMode={positionMode} onBack={() => setScreen('home')} />;
+  }
+  if (screen === 'mode2') {
+    return <Mode2Screen instrument={instrument} positionMode={positionMode} onBack={() => setScreen('home')} />;
+  }
+  return (
+    <HomeScreen
+      instrument={instrument}
+      setInstrument={setInstrument}
+      positionMode={positionMode}
+      setPositionMode={setPositionMode}
+      onStartMode1={() => setScreen('mode1')}
+      onStartMode2={() => setScreen('mode2')}
+    />
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+  </script>
+</body>
+</html>
