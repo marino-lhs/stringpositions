@@ -115,7 +115,21 @@ const CSS = `
 /* ═══════════════════════════════════════════════
    MUSIC THEORY DATA — POSITIONS
 ═══════════════════════════════════════════════ */
-// For a given (instrument, position, string), the letter -> finger mapping.
+// For a given (instrument, position, string), the note -> finger mapping.
+//
+// For violin/viola we currently only use natural notes, so the keys are bare
+// letters: { 'B': 1, 'C': 2, ... }
+//
+// For cello we need accidentals too. Cello positions span a perfect 4th on
+// each string, which means each position contains both naturals and
+// chromatics. The keys here use a "noteId" form: letter + accidental code,
+// where the accidental code is "" (natural), "#", or "b". So:
+//   { 'A#': 1, 'B': 2, 'C': 3, 'C#': 4 }  for cello A-string Half position.
+//
+// A given physical pitch has two enharmonic spellings (A# and Bb both map to
+// the same finger on the same string). The POSITIONS map only stores ONE
+// spelling per pitch; the helpers below normalize lookups so either spelling
+// resolves to the right finger.
 const POSITIONS = {
   violin: {
     2: {
@@ -157,16 +171,137 @@ const POSITIONS = {
       A: { E: 1, F: 2, G: 3, A: 4 },
     },
   },
+  // Cello: 7 positions covering Half through 4th. Each position spans a
+  // perfect 4th on each string. Note IDs use letter + accidental
+  // (e.g. 'A#', 'Bb', 'C', 'C#'). The helpers below normalize enharmonics
+  // so either spelling resolves to the same finger.
+  cello: {
+    // Half Position — 1st finger a half-step above the open string
+    0.5: {
+      C: { 'C#': 1, 'D':  2, 'D#': 3, 'E':  4 },
+      G: { 'G#': 1, 'A':  2, 'A#': 3, 'B':  4 },
+      D: { 'D#': 1, 'E':  2, 'F':  3, 'F#': 4 },
+      A: { 'A#': 1, 'B':  2, 'C':  3, 'C#': 4 },
+    },
+    // 1st Position — 1st finger a whole step above the open string
+    1: {
+      C: { 'D':  1, 'D#': 2, 'E':  3, 'F':  4 },
+      G: { 'A':  1, 'A#': 2, 'B':  3, 'C':  4 },
+      D: { 'E':  1, 'F':  2, 'F#': 3, 'G':  4 },
+      A: { 'B':  1, 'C':  2, 'C#': 3, 'D':  4 },
+    },
+    // High 1st / Low 2nd — 1st finger a minor 3rd above the open string
+    1.5: {
+      C: { 'D#': 1, 'E':  2, 'F':  3, 'F#': 4 },
+      G: { 'A#': 1, 'B':  2, 'C':  3, 'C#': 4 },
+      D: { 'F':  1, 'F#': 2, 'G':  3, 'G#': 4 },
+      A: { 'C':  1, 'C#': 2, 'D':  3, 'D#': 4 },
+    },
+    // 2nd Position — 1st finger a major 3rd above the open string
+    2: {
+      C: { 'E':  1, 'F':  2, 'F#': 3, 'G':  4 },
+      G: { 'B':  1, 'C':  2, 'C#': 3, 'D':  4 },
+      D: { 'F#': 1, 'G':  2, 'G#': 3, 'A':  4 },
+      A: { 'C#': 1, 'D':  2, 'D#': 3, 'E':  4 },
+    },
+    // 3rd Position — 1st finger a perfect 4th above the open string
+    3: {
+      C: { 'F':  1, 'F#': 2, 'G':  3, 'G#': 4 },
+      G: { 'C':  1, 'C#': 2, 'D':  3, 'D#': 4 },
+      D: { 'G':  1, 'G#': 2, 'A':  3, 'A#': 4 },
+      A: { 'D':  1, 'D#': 2, 'E':  3, 'F':  4 },
+    },
+    // High 3rd / Low 4th — 1st finger a tritone above the open string
+    3.5: {
+      C: { 'F#': 1, 'G':  2, 'G#': 3, 'A':  4 },
+      G: { 'C#': 1, 'D':  2, 'D#': 3, 'E':  4 },
+      D: { 'G#': 1, 'A':  2, 'A#': 3, 'B':  4 },
+      A: { 'D#': 1, 'E':  2, 'F':  3, 'F#': 4 },
+    },
+    // 4th Position — 1st finger a perfect 5th above the open string
+    4: {
+      C: { 'G':  1, 'G#': 2, 'A':  3, 'A#': 4 },
+      G: { 'D':  1, 'D#': 2, 'E':  3, 'F':  4 },
+      D: { 'A':  1, 'A#': 2, 'B':  3, 'C':  4 },
+      A: { 'E':  1, 'F':  2, 'F#': 3, 'G':  4 },
+    },
+  },
+  // Bass positions are added below in generateBassPositions(). Bass uses a
+  // different convention: positions are named by the letter of the note that
+  // 1st finger plays on the G string (e.g. "A" position = 1st finger on G
+  // string plays A). Available fingers in the lower positions: 1, 2, 4.
+  // (Finger 3 doubles with 4 in classical bass technique.)
+  bass: {},
 };
+
+// --- Bass position generator -----------------------------------------------
+// For each named position, finger 1 sits a fixed number of half-steps above
+// the open string. We list the half-step offsets here; the rest is mechanical.
+const BASS_POSITIONS = [
+  { id: 'G#', offset: 1 },  // G#/Ab on G string
+  { id: 'A',  offset: 2 },
+  { id: 'A#', offset: 3 },
+  { id: 'B',  offset: 4 },
+  { id: 'C',  offset: 5 },
+  { id: 'C#', offset: 6 },
+  { id: 'D',  offset: 7 },
+  { id: 'D#', offset: 8 },
+  { id: 'E',  offset: 9 },
+];
+
+// Convert a MIDI number into a noteId string ('C', 'C#', 'D', ...) using
+// sharps. Used to populate position maps with consistent spelling; the
+// enharmonic-aware grader handles flats too.
+const SHARP_SPELLING = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function midiToSharpNoteId(midi) {
+  return SHARP_SPELLING[((midi % 12) + 12) % 12];
+}
+
+// Bass open strings (WRITTEN pitch — bass clef, octave higher than sounding):
+// E2, A2, D3, G3.
+const BASS_OPEN_MIDI = { E: 40, A: 45, D: 50, G: 55 };
+const BASS_STRINGS = ['E', 'A', 'D', 'G'];
+
+(function buildBassPositions() {
+  for (const { id, offset } of BASS_POSITIONS) {
+    const stringMaps = {};
+    for (const str of BASS_STRINGS) {
+      const openMidi = BASS_OPEN_MIDI[str];
+      const f1Midi = openMidi + offset;
+      const f2Midi = openMidi + offset + 1;
+      const f4Midi = openMidi + offset + 2;
+      stringMaps[str] = {
+        [midiToSharpNoteId(f1Midi)]: 1,
+        [midiToSharpNoteId(f2Midi)]: 2,
+        [midiToSharpNoteId(f4Midi)]: 4,
+      };
+    }
+    POSITIONS.bass[id] = stringMaps;
+  }
+})();
 
 const OPEN_STRINGS = {
   violin: { G: 55, D: 62, A: 69, E: 76 },
   viola:  { C: 48, G: 55, D: 62, A: 69 },
+  cello:  { C: 36, G: 43, D: 50, A: 57 }, // C2, G2, D3, A3
+  bass:   BASS_OPEN_MIDI,                  // E2, A2, D3, G3 (written pitch)
 };
 
 const STRING_ORDER = {
   violin: ['G', 'D', 'A', 'E'],
   viola:  ['C', 'G', 'D', 'A'],
+  cello:  ['C', 'G', 'D', 'A'],
+  bass:   ['E', 'A', 'D', 'G'],
+};
+
+// Which positions are available per instrument (for the position selector).
+// Cello uses the full 7-position list including half and "low" variants.
+// Bass uses string-typed positions named by 1st finger note on G string.
+const INSTR_POSITIONS = {
+  violin: [2, 3, 4],
+  viola:  [2, 3, 4],
+  cello:  [0.5, 1, 1.5, 2, 3, 3.5, 4],
+  bass:   BASS_POSITIONS.map(p => p.id),
 };
 
 const LETTER_SEMITONE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -174,6 +309,8 @@ const LETTER_SEMITONE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const INSTR = {
   violin: { name: 'Violin', clef: 'treble', desc: 'G · D · A · E  ·  Treble clef' },
   viola:  { name: 'Viola',  clef: 'alto',   desc: 'C · G · D · A  ·  Alto clef' },
+  cello:  { name: 'Cello',  clef: 'bass',   desc: 'C · G · D · A  ·  Bass clef' },
+  bass:   { name: 'Bass',   clef: 'bass',   desc: 'E · A · D · G  ·  Bass clef' },
 };
 
 /* ═══════════════════════════════════════════════
@@ -183,6 +320,22 @@ function noteToMidi(letter, accidental, octave) {
   return 12 * (octave + 1) + LETTER_SEMITONE[letter] + accidental;
 }
 
+// Parse a position map key like 'C', 'C#', 'Bb' into { letter, accidental }
+// where accidental is -1, 0, or 1. Used for cello entries; violin/viola entries
+// are bare letters and parse to accidental=0.
+function parseNoteId(noteId) {
+  const letter = noteId[0];
+  const sym = noteId.slice(1);
+  const accidental = sym === '#' ? 1 : sym === 'b' ? -1 : 0;
+  return { letter, accidental };
+}
+
+// Build the MIDI pitch class (0..11) of a position-map key.
+function noteIdPitchClass(noteId) {
+  const { letter, accidental } = parseNoteId(noteId);
+  return ((LETTER_SEMITONE[letter] + accidental) % 12 + 12) % 12;
+}
+
 function findNextLetterAbove(openMidi, letter) {
   for (let m = openMidi + 1; m < openMidi + 15; m++) {
     if (m % 12 === LETTER_SEMITONE[letter]) return m;
@@ -190,60 +343,124 @@ function findNextLetterAbove(openMidi, letter) {
   return null;
 }
 
-// For (instrument, position, letter, octave), figure out which string the note lives on.
-function getStringForNote(instrument, position, letter, octave) {
+// Find the lowest MIDI value > openMidi that matches the given pitch class.
+// Used to anchor cello fingerings — works whether the noteId is natural,
+// sharp, or flat.
+function findNextPitchClassAbove(openMidi, pitchClass) {
+  for (let m = openMidi + 1; m < openMidi + 15; m++) {
+    if (((m % 12) + 12) % 12 === pitchClass) return m;
+  }
+  return null;
+}
+
+// Compute the MIDI range of the four fingers on a string for a given position.
+// Returns { lowMidi, highMidi } where lowMidi is finger 1 and highMidi is finger 4.
+function getFingerRange(instrument, position, str) {
+  const letterMap = POSITIONS[instrument][position][str];
+  if (!letterMap) return null;
+  const finger1Id = Object.keys(letterMap).find(k => letterMap[k] === 1);
+  const finger4Id = Object.keys(letterMap).find(k => letterMap[k] === 4);
+  const openMidi = OPEN_STRINGS[instrument][str];
+  const lowMidi  = findNextPitchClassAbove(openMidi, noteIdPitchClass(finger1Id));
+  const highMidi = findNextPitchClassAbove(openMidi, noteIdPitchClass(finger4Id));
+  return { lowMidi, highMidi };
+}
+
+// For (instrument, position, letter, accidental, octave), figure out which
+// string + finger plays this pitch. Accepts any enharmonic spelling.
+function getFingerForNote(instrument, position, letter, accidental, octave) {
   const positionMap = POSITIONS[instrument][position];
+  if (!positionMap) return null;
+  const targetMidi = noteToMidi(letter, accidental, octave);
+  const targetPC = ((targetMidi % 12) + 12) % 12;
   const strings = STRING_ORDER[instrument];
+
   for (const str of strings) {
     const letterMap = positionMap[str];
-    if (!letterMap || !(letter in letterMap)) continue;
-    const finger1Letter = Object.keys(letterMap).find(k => letterMap[k] === 1);
-    const finger4Letter = Object.keys(letterMap).find(k => letterMap[k] === 4);
-    const openMidi = OPEN_STRINGS[instrument][str];
-    const finger1Midi = findNextLetterAbove(openMidi, finger1Letter);
-    const finger4Midi = findNextLetterAbove(openMidi, finger4Letter);
-    const naturalMidi = noteToMidi(letter, 0, octave);
-    if (naturalMidi >= finger1Midi && naturalMidi <= finger4Midi) {
-      return str;
+    if (!letterMap) continue;
+    const range = getFingerRange(instrument, position, str);
+    if (!range) continue;
+    if (targetMidi < range.lowMidi || targetMidi > range.highMidi) continue;
+
+    // Find the entry whose pitch class matches.
+    for (const noteId of Object.keys(letterMap)) {
+      if (noteIdPitchClass(noteId) === targetPC) {
+        return { string: str, finger: letterMap[noteId] };
+      }
     }
   }
   return null;
 }
 
-function getFingerForNote(instrument, position, letter, octave) {
-  const str = getStringForNote(instrument, position, letter, octave);
-  if (!str) return null;
-  return { string: str, finger: POSITIONS[instrument][position][str][letter] };
+// Back-compat shim — older callers used (instr, pos, letter, octave).
+function getStringForNote(instrument, position, letter, octave) {
+  const r = getFingerForNote(instrument, position, letter, 0, octave);
+  return r ? r.string : null;
 }
 
-// All valid notes for a given instrument+position
+// All valid (fingered) notes for a given instrument+position.
+// Each entry: { letter, accidental, octave, string, finger, midi }
+// For violin/viola positions (bare-letter keys) every entry has accidental=0.
+// For cello positions every fingered pitch appears exactly once, in the
+// spelling stored in POSITIONS (callers can re-spell enharmonically if needed).
 function getValidNotesForPosition(instrument, position) {
   const positionMap = POSITIONS[instrument][position];
   const strings = STRING_ORDER[instrument];
   const result = [];
   for (const str of strings) {
     const letterMap = positionMap[str];
-    const finger1Letter = Object.keys(letterMap).find(k => letterMap[k] === 1);
-    const finger4Letter = Object.keys(letterMap).find(k => letterMap[k] === 4);
-    const openMidi = OPEN_STRINGS[instrument][str];
-    const finger1Midi = findNextLetterAbove(openMidi, finger1Letter);
-    const finger4Midi = findNextLetterAbove(openMidi, finger4Letter);
-    for (const letter of Object.keys(letterMap)) {
-      for (let octave = 2; octave <= 7; octave++) {
-        const naturalMidi = noteToMidi(letter, 0, octave);
-        if (naturalMidi >= finger1Midi && naturalMidi <= finger4Midi) {
-          result.push({ letter, octave, string: str, finger: letterMap[letter], naturalMidi });
+    if (!letterMap) continue;
+    const range = getFingerRange(instrument, position, str);
+    if (!range) continue;
+    for (const noteId of Object.keys(letterMap)) {
+      const { letter, accidental } = parseNoteId(noteId);
+      // Search octaves to find the one that lands in the finger range.
+      for (let octave = 1; octave <= 7; octave++) {
+        const midi = noteToMidi(letter, accidental, octave);
+        if (midi >= range.lowMidi && midi <= range.highMidi) {
+          result.push({
+            letter, accidental, octave,
+            string: str, finger: letterMap[noteId], midi,
+          });
         }
       }
     }
   }
-  return result.sort((a, b) => a.naturalMidi - b.naturalMidi);
+  return result.sort((a, b) => a.midi - b.midi);
 }
 
+// Display name for a bass position id ('G#' -> 'G♯/A♭', 'A' -> 'A', etc.)
+const BASS_POSITION_DISPLAY = {
+  'G#': 'G♯/A♭',
+  'A':  'A',
+  'A#': 'A♯/B♭',
+  'B':  'B',
+  'C':  'C',
+  'C#': 'C♯/D♭',
+  'D':  'D',
+  'D#': 'D♯/E♭',
+  'E':  'E',
+};
+
 function ordinal(n) {
+  // Bass positions are string-typed (e.g. 'A', 'G#').
+  if (typeof n === 'string') return BASS_POSITION_DISPLAY[n] ?? n;
+  if (n === 0.5) return 'Half';
+  if (n === 1.5) return 'High 1st / Low 2nd';
+  if (n === 3.5) return 'High 3rd / Low 4th';
+  if (n === 1) return '1st';
   if (n === 2) return '2nd';
   if (n === 3) return '3rd';
   return n + 'th';
+}
+
+// Short label for compact UI buttons (the position selector grid).
+function positionLabel(n) {
+  if (typeof n === 'string') return BASS_POSITION_DISPLAY[n] ?? n;
+  if (n === 0.5) return 'Half';
+  if (n === 1.5) return 'Lo 2';
+  if (n === 3.5) return 'Lo 4';
+  return ordinal(n);
 }
 
 function pickRandom(arr) {
@@ -263,14 +480,19 @@ function noteToVexKey(letter, accidental, octave) {
 // For each clef, the middle line corresponds to a specific note.
 //   Treble: middle line = B4
 //   Alto:   middle line = C4
+//   Bass:   middle line = D3
 // Returns a number where 0 = middle line, positive = above, negative = below.
 function staffPosition(clef, letter, octave) {
   const LETTERS = ['C','D','E','F','G','A','B'];
   const stepIdx = LETTERS.indexOf(letter);
   const totalSteps = octave * 7 + stepIdx;
-  // middle line = B4 for treble (octave 4, B = idx 6) -> 4*7+6=34
-  //               C4 for alto (octave 4, C = idx 0) -> 4*7+0=28
-  const middleSteps = clef === 'treble' ? 34 : 28;
+  // middle line = B4 for treble (4*7+6=34)
+  //               C4 for alto   (4*7+0=28)
+  //               D3 for bass   (3*7+1=22)
+  const middleSteps =
+    clef === 'treble' ? 34 :
+    clef === 'bass'   ? 22 :
+                        28;  // alto
   return totalSteps - middleSteps;
 }
 
@@ -391,6 +613,71 @@ const DURATION_BEATS = {
   'dotted-quarter': 1.5,
   'half': 2,
 };
+
+/* ═══════════════════════════════════════════════
+   ACCIDENTAL DISPLAY RULES
+   Standard CMN rules:
+   - An accidental (#, b, natural) carries through the rest of its measure
+     for any note on the SAME staff position (same letter + octave).
+   - Different octave = different staff position = independent state.
+   - Barline cancels everything.
+   - Courtesy naturals are conventional when the first note of a new measure
+     reuses a staff position that was altered in the previous measure.
+═══════════════════════════════════════════════ */
+
+// Given the two measures of a phrase as arrays of notes (each having
+// {letter, accidental, octave}), return a parallel array-of-arrays of strings:
+// '#', 'b', 'n' (natural), or null (no glyph). Indexed [measureIdx][noteIdx].
+function computePhraseAccidentals(m1, m2) {
+  const result = [[], []];
+  const measures = [m1, m2];
+
+  // First pass over measure 1 to remember its ending state per staff position.
+  const m1EndState = new Map(); // key = "letter|octave" -> accidental (-1,0,1)
+
+  for (let mi = 0; mi < measures.length; mi++) {
+    const measure = measures[mi];
+    // State within this measure: letter|octave -> currently-active accidental
+    // (a value of "unset" means no accidental has been seen on this position
+    // in this measure yet, so the implied pitch is the natural).
+    const state = new Map();
+
+    for (let i = 0; i < measure.length; i++) {
+      const n = measure[i];
+      const key = `${n.letter}|${n.octave}`;
+      const acc = n.accidental;          // -1, 0, or 1
+      const prevInMeasure = state.get(key);
+
+      let glyph = null;
+
+      if (prevInMeasure === undefined) {
+        // First time this staff position appears in this measure.
+        if (acc !== 0) {
+          glyph = acc === 1 ? '#' : 'b';
+        } else if (mi === 1 && m1EndState.get(key) !== undefined && m1EndState.get(key) !== 0) {
+          // Courtesy natural: prior measure left this staff position altered,
+          // and this is the first occurrence in the new measure as a natural.
+          glyph = 'n';
+        }
+        // else: natural with no prior alteration → no glyph needed.
+      } else if (prevInMeasure !== acc) {
+        // The active accidental on this position differs from this note's
+        // pitch — must explicitly notate the change.
+        glyph = acc === 1 ? '#' : acc === -1 ? 'b' : 'n';
+      }
+      // else: same accidental as already in force → no glyph needed.
+
+      state.set(key, acc);
+      result[mi].push(glyph);
+    }
+
+    if (mi === 0) {
+      // Snapshot end-of-measure state for courtesy logic in m2.
+      for (const [k, v] of state.entries()) m1EndState.set(k, v);
+    }
+  }
+  return result;
+}
 
 /* ═══════════════════════════════════════════════
    STAFF VIEW — SINGLE NOTE (Mode 1)
@@ -518,8 +805,13 @@ function PhraseStaff({ phrase, clef, results }) {
         svgEl.insertBefore(bg, svgEl.firstChild);
       }
 
+      // Compute which accidental glyph each note should display, applying
+      // standard music-notation rules (carry through the measure on same
+      // staff position, courtesy naturals across barlines).
+      const accidentalGlyphs = computePhraseAccidentals(m1, m2);
+
       // Helper to make VF notes for a given measure slice
-      const makeVfNotes = (notesSlice, stemSlice, indexOffset) => {
+      const makeVfNotes = (notesSlice, stemSlice, indexOffset, glyphSlice) => {
         return notesSlice.map((n, idx) => {
           const key = noteToVexKey(n.letter, n.accidental, n.octave);
           const note = new VF.StaveNote({
@@ -531,8 +823,10 @@ function PhraseStaff({ phrase, clef, results }) {
           if (n.duration === 'dotted-quarter') {
             note.addDotToAll();
           }
-          if (n.accidental === 1) note.addAccidental(0, new VF.Accidental('#'));
-          else if (n.accidental === -1) note.addAccidental(0, new VF.Accidental('b'));
+          const g = glyphSlice[idx];
+          if (g === '#') note.addAccidental(0, new VF.Accidental('#'));
+          else if (g === 'b') note.addAccidental(0, new VF.Accidental('b'));
+          else if (g === 'n') note.addAccidental(0, new VF.Accidental('n'));
           if (results) {
             const color = results[indexOffset + idx] ? '#15803d' : '#b91c1c';
             note.setStyle({ fillStyle: color, strokeStyle: color });
@@ -555,8 +849,8 @@ function PhraseStaff({ phrase, clef, results }) {
       const stave2 = new VF.Stave(10 + m1Width, 50, m2Width + 10);
       stave2.setContext(ctx).draw();
 
-      const vfM1 = makeVfNotes(m1, m1Result.dirs, 0);
-      const vfM2 = makeVfNotes(m2, m2Result.dirs, m1.length);
+      const vfM1 = makeVfNotes(m1, m1Result.dirs, 0, accidentalGlyphs[0]);
+      const vfM2 = makeVfNotes(m2, m2Result.dirs, m1.length, accidentalGlyphs[1]);
 
       const beats1 = m1.reduce((s, n) => s + DURATION_BEATS[n.duration], 0);
       const beats2 = m2.reduce((s, n) => s + DURATION_BEATS[n.duration], 0);
@@ -599,9 +893,17 @@ function PhraseStaff({ phrase, clef, results }) {
 /* ═══════════════════════════════════════════════
    FINGER NUMBER ROW
 ═══════════════════════════════════════════════ */
-function FingerRow({ onClick, selected, correct, showResult, disabled }) {
-  // A row of 4 circular buttons numbered 1-4
-  const fingers = [1, 2, 3, 4];
+// Available fingers per instrument. Bass classical technique uses 1, 2, 4
+// in lower positions (3 doubles 4); other strings use 1-4.
+const INSTR_FINGERS = {
+  violin: [1, 2, 3, 4],
+  viola:  [1, 2, 3, 4],
+  cello:  [1, 2, 3, 4],
+  bass:   [1, 2, 4],
+};
+
+function FingerRow({ instrument, onClick, selected, correct, showResult, disabled }) {
+  const fingers = INSTR_FINGERS[instrument] ?? [1, 2, 3, 4];
   return (
     <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 8 }}>
       {fingers.map(f => {
@@ -1653,14 +1955,106 @@ const LEVEL_NAMES = {
 };
 
 /* ═══════════════════════════════════════════════
+   PHRASE SYNTHESIS (fallback when no hand-written
+   phrases exist for an instrument+position)
+═══════════════════════════════════════════════ */
+// Build an 8-beat phrase using only valid notes for the given (instrument,
+// position). Level controls how disjunct the melody is:
+//   1 — stepwise (mostly 1-2 scale-step motion)
+//   2 — small leaps (up to a 3rd)
+//   3 — mixed intervals (up to a 5th)
+//   4 — disjunct (anything goes)
+function synthesizePhrase(instrument, position, level) {
+  const pool = getValidNotesForPosition(instrument, position);
+  if (pool.length === 0) return [];
+
+  // Max interval (in half-steps) between consecutive notes, by level.
+  const maxLeap = { 1: 2, 2: 4, 3: 7, 4: 24 }[level] ?? 24;
+
+  // Rhythmic templates totaling 8 beats. Mix of quarters, eighths, halves.
+  // Each template's beats sum to exactly 8 AND has a natural boundary at
+  // beat 4 so it splits cleanly into two 4/4 measures.
+  const templates = [
+    // 4 + 4
+    ['quarter','quarter','quarter','quarter','quarter','quarter','half'],
+    ['quarter','quarter','quarter','quarter','quarter','quarter','quarter','quarter'],
+    ['eighth','eighth','quarter','quarter','quarter','quarter','quarter','half'],
+    ['quarter','quarter','eighth','eighth','quarter','quarter','quarter','half'],
+    ['quarter','dotted-quarter','eighth','quarter','quarter','quarter','half'],
+    ['eighth','eighth','eighth','eighth','quarter','quarter','quarter','quarter','half'],
+    ['quarter','eighth','eighth','quarter','quarter','quarter','eighth','eighth','quarter','quarter'],
+    ['half','quarter','quarter','quarter','quarter','quarter','quarter'],
+    ['quarter','quarter','half','eighth','eighth','quarter','quarter','quarter'],
+  ];
+  const rhythm = pickRandom(templates);
+
+  // Walk through the rhythm, choosing each pitch to be within maxLeap of the
+  // previous one. Start somewhere in the middle of the pool for a natural
+  // tessitura.
+  const startIdx = Math.floor(pool.length / 3) +
+                   Math.floor(Math.random() * Math.max(1, Math.floor(pool.length / 3)));
+  let prev = pool[Math.min(startIdx, pool.length - 1)];
+  const phrase = [{
+    letter: prev.letter, accidental: prev.accidental, octave: prev.octave,
+    duration: rhythm[0],
+  }];
+
+  for (let i = 1; i < rhythm.length; i++) {
+    // Candidates within maxLeap. Bias slightly toward smaller intervals.
+    const candidates = pool.filter(n => Math.abs(n.midi - prev.midi) <= maxLeap);
+    const pickPool = candidates.length > 0 ? candidates : pool;
+    // Bias toward smaller intervals: weighted random by 1/(1+distance)
+    const weights = pickPool.map(n => 1 / (1 + Math.abs(n.midi - prev.midi)));
+    const totalW = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * totalW;
+    let chosen = pickPool[0];
+    for (let j = 0; j < pickPool.length; j++) {
+      r -= weights[j];
+      if (r <= 0) { chosen = pickPool[j]; break; }
+    }
+    phrase.push({
+      letter: chosen.letter, accidental: chosen.accidental, octave: chosen.octave,
+      duration: rhythm[i],
+    });
+    prev = chosen;
+  }
+  return phrase;
+}
+
+/* ═══════════════════════════════════════════════
    QUESTION GENERATION (MODE 1)
 ═══════════════════════════════════════════════ */
+// For accidentals stored as a sharp in POSITIONS, the equivalent flat spelling.
+// Used to randomize how chromatic notes are displayed. Naturals are returned
+// as-is.
+function enharmonicSpellings(letter, accidental) {
+  if (accidental === 0) return [{ letter, accidental: 0 }];
+  if (accidental === 1) {
+    // X# = (X+1)b
+    const next = { C: 'D', D: 'E', E: 'F', F: 'G', G: 'A', A: 'B', B: 'C' }[letter];
+    // E# and B# are weird — skip those (we never store them anyway).
+    if (next === 'F' || next === 'C') return [{ letter, accidental: 1 }];
+    return [{ letter, accidental: 1 }, { letter: next, accidental: -1 }];
+  }
+  if (accidental === -1) {
+    const prev = { C: 'B', D: 'C', E: 'D', F: 'E', G: 'F', A: 'G', B: 'A' }[letter];
+    if (prev === 'E' || prev === 'B') return [{ letter, accidental: -1 }];
+    return [{ letter, accidental: -1 }, { letter: prev, accidental: 1 }];
+  }
+  return [{ letter, accidental }];
+}
+
 function generateSingleNoteQuestion(instrument, position) {
   const validNotes = getValidNotesForPosition(instrument, position);
   const note = pickRandom(validNotes);
+  // Adjust octave when re-spelling: Cb is in the octave above (e.g. A#3 = Bb3
+  // — same octave; but C#3 = Db3 — also same octave). The only edge cases
+  // are E# / B# / Cb / Fb which we excluded above, so spelling never crosses
+  // an octave boundary here.
+  const spelling = pickRandom(enharmonicSpellings(note.letter, note.accidental));
   return {
-    letter: note.letter,
-    accidental: 0,
+    letter: spelling.letter,
+    accidental: spelling.accidental,
     octave: note.octave,
     correctString: note.string,
     correctFinger: note.finger,
@@ -1671,11 +2065,25 @@ function generateSingleNoteQuestion(instrument, position) {
 /* ═══════════════════════════════════════════════
    SCREEN: HOME / SETUP
 ═══════════════════════════════════════════════ */
+// Unicode clef glyphs (rendered via Bravura/Times). Bass clef uses U+1D122.
+const CLEF_GLYPH = { treble: '𝄞', alto: '𝄡', bass: '𝄢' };
+
 function HomeScreen({
   instrument, setInstrument,
   positionMode, setPositionMode,
   onStartMode1, onStartMode2,
 }) {
+  const positions = INSTR_POSITIONS[instrument];
+  // Number of columns in the position grid. We append "All" so total cells =
+  // positions.length + 1. Pick a column count that gives balanced rows:
+  //   violin/viola (3+1=4 cells): 4 cols × 1 row
+  //   cello (7+1=8 cells):        4 cols × 2 rows
+  //   bass (9+1=10 cells):        5 cols × 2 rows
+  const totalCells = positions.length + 1;
+  const posGridCols = totalCells <= 4 ? 4
+                     : totalCells <= 8 ? 4
+                     : 5;
+
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', flexDirection: 'column',
@@ -1686,14 +2094,14 @@ function HomeScreen({
         <div style={{
           fontFamily: "'Times New Roman',serif", fontSize: 44,
           color: '#c89b3c', marginBottom: 12, letterSpacing: 4,
-        }}>𝄞 𝄡</div>
+        }}>𝄞 𝄡 𝄢</div>
         <h1 style={{
           fontFamily: "'Playfair Display',serif",
           fontSize: 'clamp(28px,5vw,44px)', fontWeight: 700,
           color: '#f1ece2', marginBottom: 8,
         }}>String Position Fingerings</h1>
         <p style={{ color: '#6b7280', fontSize: 15 }}>
-          Practice 2nd, 3rd, and 4th position fingerings on violin and viola
+          Practice position fingerings on violin, viola, cello, and bass
         </p>
       </div>
 
@@ -1703,21 +2111,26 @@ function HomeScreen({
             color: '#c89b3c', fontSize: 12, letterSpacing: 2,
             textTransform: 'uppercase', marginBottom: 10,
           }}>Instrument</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))',
+            gap: 12,
+          }}>
             {Object.entries(INSTR).map(([k, inst]) => (
               <button
                 key={k}
                 className={`opt-card ${instrument === k ? 'active' : ''}`}
                 onClick={() => setInstrument(k)}
+                style={{ padding: '14px 10px' }}
               >
-                <div style={{ fontSize: 30, color: '#c89b3c', marginBottom: 6, fontFamily: "'Times New Roman',serif" }}>
-                  {inst.clef === 'treble' ? '𝄞' : '𝄡'}
+                <div style={{ fontSize: 28, color: '#c89b3c', marginBottom: 4, fontFamily: "'Times New Roman',serif" }}>
+                  {CLEF_GLYPH[inst.clef] ?? '𝄞'}
                 </div>
                 <div style={{
                   fontFamily: "'Playfair Display',serif",
-                  fontSize: 18, fontWeight: 700, marginBottom: 4,
+                  fontSize: 17, fontWeight: 700, marginBottom: 4,
                 }}>{inst.name}</div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>{inst.desc}</div>
+                <div style={{ fontSize: 11, color: '#6b7280' }}>{inst.desc}</div>
               </button>
             ))}
           </div>
@@ -1728,20 +2141,20 @@ function HomeScreen({
             color: '#c89b3c', fontSize: 12, letterSpacing: 2,
             textTransform: 'uppercase', marginBottom: 10,
           }}>Position</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-            {[2, 3, 4, 'all'].map(p => (
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${posGridCols}, 1fr)`, gap: 10 }}>
+            {[...positions, 'all'].map(p => (
               <button
                 key={p}
                 className={`opt-card ${positionMode === p ? 'active' : ''}`}
                 onClick={() => setPositionMode(p)}
-                style={{ padding: '14px 8px' }}
+                style={{ padding: '12px 6px' }}
               >
                 <div style={{
                   fontFamily: "'Playfair Display',serif",
-                  fontSize: 17, fontWeight: 700,
-                }}>{p === 'all' ? 'All' : ordinal(p)}</div>
-                <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
-                  {p === 'all' ? '2nd, 3rd & 4th' : 'position'}
+                  fontSize: 15, fontWeight: 700, lineHeight: 1.1,
+                }}>{p === 'all' ? 'All' : positionLabel(p)}</div>
+                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>
+                  {p === 'all' ? `${positions.length} positions` : 'position'}
                 </div>
               </button>
             ))}
@@ -1787,9 +2200,9 @@ function Mode1Screen({ instrument, positionMode, onBack }) {
 
   // Determine which position to use for each question
   const pickPosition = useCallback(() => {
-    if (positionMode === 'all') return pickRandom([2, 3, 4]);
+    if (positionMode === 'all') return pickRandom(INSTR_POSITIONS[instrument]);
     return positionMode;
-  }, [positionMode]);
+  }, [positionMode, instrument]);
 
   const [question, setQuestion] = useState(() =>
     generateSingleNoteQuestion(instrument, pickPosition())
@@ -1850,6 +2263,7 @@ function Mode1Screen({ instrument, positionMode, onBack }) {
         </div>
 
         <FingerRow
+          instrument={instrument}
           onClick={onFinger}
           selected={selected}
           correct={question.correctFinger}
@@ -1869,7 +2283,7 @@ function Mode1Screen({ instrument, positionMode, onBack }) {
             </div>
             {!isCorrect && (
               <div style={{ fontSize: 14, color: '#cbd5e1', lineHeight: 1.5 }}>
-                {question.letter}{question.octave} in {ordinal(question.position)} position is
+                {question.letter}{question.accidental === 1 ? '♯' : question.accidental === -1 ? '♭' : ''}{question.octave} in {ordinal(question.position)} position is
                 on the <strong style={{ color: '#c89b3c' }}>{question.correctString} string</strong>,
                 played with finger <strong style={{ color: '#c89b3c' }}>{question.correctFinger}</strong>.
               </div>
@@ -1891,18 +2305,23 @@ function Mode2Screen({ instrument, positionMode, onBack }) {
   const clef = INSTR[instrument].clef;
   const [level, setLevel] = useState(1);
 
-  // Pick the position for each phrase. For "all", randomize per phrase.
+  // Pick the position for each phrase. For "all", randomize per phrase
+  // among the positions valid for this instrument.
   const pickPosition = useCallback(() => {
-    if (positionMode === 'all') return pickRandom([2, 3, 4]);
+    if (positionMode === 'all') return pickRandom(INSTR_POSITIONS[instrument]);
     return positionMode;
-  }, [positionMode]);
+  }, [positionMode, instrument]);
 
-  // Pick a random phrase from the chosen position+level
+  // Pick a random phrase from the chosen position+level. If no pre-composed
+  // phrases exist for this (instrument, position, level), synthesize one.
   const generatePhrase = useCallback(() => {
     const position = pickPosition();
-    const phrasesAtLevel = PHRASES[instrument][position][level];
-    const phrase = pickRandom(phrasesAtLevel);
-    return { phrase, position };
+    const phrasesAtLevel = PHRASES?.[instrument]?.[position]?.[level];
+    if (phrasesAtLevel && phrasesAtLevel.length > 0) {
+      const phrase = pickRandom(phrasesAtLevel);
+      return { phrase, position };
+    }
+    return { phrase: synthesizePhrase(instrument, position, level), position };
   }, [instrument, level, pickPosition]);
 
   const [current, setCurrent] = useState(() => generatePhrase());
@@ -1922,9 +2341,10 @@ function Mode2Screen({ instrument, positionMode, onBack }) {
 
   // Keyboard input
   useEffect(() => {
+    const allowedKeys = INSTR_FINGERS[instrument].map(String);
     const handleKey = (e) => {
       if (results) return;
-      if (['1','2','3','4'].includes(e.key)) {
+      if (allowedKeys.includes(e.key)) {
         e.preventDefault();
         enterFinger(parseInt(e.key));
       } else if (e.key === 'Backspace' || e.key === 'ArrowLeft') {
@@ -1954,7 +2374,7 @@ function Mode2Screen({ instrument, positionMode, onBack }) {
 
   const handleSubmit = () => {
     const newResults = current.phrase.map((n, i) => {
-      const r = getFingerForNote(instrument, current.position, n.letter, n.octave);
+      const r = getFingerForNote(instrument, current.position, n.letter, n.accidental, n.octave);
       return r && fingerInputs[i] === r.finger;
     });
     setResults(newResults);
@@ -2055,6 +2475,7 @@ function Mode2Screen({ instrument, positionMode, onBack }) {
 
         {/* Number row buttons */}
         <FingerRow
+          instrument={instrument}
           onClick={enterFinger}
           selected={null}
           correct={null}
@@ -2063,7 +2484,7 @@ function Mode2Screen({ instrument, positionMode, onBack }) {
         />
 
         <div style={{ color: '#6b7280', fontSize: 12, marginTop: 12 }}>
-          Click numbers to fill, or use keys 1-4 · Backspace/← to go back · Enter to submit
+          Click numbers to fill, or use keys {INSTR_FINGERS[instrument].join('/')} · Backspace/← to go back · Enter to submit
         </div>
 
         {/* Submit / Next */}
@@ -2088,14 +2509,15 @@ function Mode2Screen({ instrument, positionMode, onBack }) {
                 <div style={{ fontSize: 13, color: '#cbd5e1', marginBottom: 12, lineHeight: 1.7 }}>
                   Correct fingerings:&nbsp;
                   {current.phrase.map((n, i) => {
-                    const r = getFingerForNote(instrument, current.position, n.letter, n.octave);
+                    const r = getFingerForNote(instrument, current.position, n.letter, n.accidental, n.octave);
+                    const accSym = n.accidental === 1 ? '♯' : n.accidental === -1 ? '♭' : '';
                     return (
                       <span key={i} style={{
                         marginRight: 10,
                         color: results[i] ? '#22c55e' : '#ef4444',
                         fontFamily: 'monospace',
                       }}>
-                        {n.letter}{n.octave}={r?.finger}
+                        {n.letter}{accSym}{n.octave}={r?.finger}
                         <span style={{ color: '#6b7280', fontSize: 11 }}>({r?.string})</span>
                       </span>
                     );
@@ -2119,6 +2541,20 @@ function App() {
   const [instrument, setInstrument] = useState('violin');
   const [positionMode, setPositionMode] = useState(3);
 
+  // When the user switches instrument, snap positionMode to a valid value
+  // for the new instrument if the current one isn't supported. ('all' is
+  // always valid; numeric positions get clamped.)
+  const handleSetInstrument = (next) => {
+    setInstrument(next);
+    const validPositions = INSTR_POSITIONS[next];
+    if (positionMode !== 'all' && !validPositions.includes(positionMode)) {
+      // Pick the closest available position by numeric value, defaulting to
+      // the middle of the new instrument's range.
+      const fallback = validPositions[Math.floor(validPositions.length / 2)];
+      setPositionMode(fallback);
+    }
+  };
+
   if (screen === 'mode1') {
     return <Mode1Screen instrument={instrument} positionMode={positionMode} onBack={() => setScreen('home')} />;
   }
@@ -2128,7 +2564,7 @@ function App() {
   return (
     <HomeScreen
       instrument={instrument}
-      setInstrument={setInstrument}
+      setInstrument={handleSetInstrument}
       positionMode={positionMode}
       setPositionMode={setPositionMode}
       onStartMode1={() => setScreen('mode1')}
